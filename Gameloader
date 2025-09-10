@@ -1,5 +1,5 @@
 local Games = {
-    [1234567890] = { -- T-Titans Battlegrounds
+    [3082002798] = { -- T-Titans Battlegrounds
         Name = "T-Titans Battlegrounds",
         Script = function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/zerolamar/ObfucatedPancakes/refs/heads/main/T-Titans%20battlegrounds"))()
