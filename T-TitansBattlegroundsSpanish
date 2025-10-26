@@ -1,0 +1,1013 @@
+--// Load Fluent
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+--// Window
+local Window = Fluent:CreateWindow({
+    Title = "🥞 Pancakes Hub",
+    SubTitle = "T-Titans Battlegrounds",
+    TabWidth = 150,
+    Size = UDim2.fromOffset(510, 420),
+    Acrylic = true,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Home = Window:AddTab({ Title = "Hogar", Icon = "home" }),
+    Autofarm = Window:AddTab({Title = "Granjeo automático", Icon="accessibility"}),
+    Main = Window:AddTab({ Title = "Principal", Icon = "pin" }),
+    Teleports = Window:AddTab({ Title = "Teletransportarse", Icon = "waves" }),
+    Misc = Window:AddTab({ Title = "Misceláneos", Icon = "folder-open" }),
+    Player = Window:AddTab({ Title = "Jugador", Icon = "person-standing" }),
+    Settings = Window:AddTab({Title = "Ajustes", Icon="settings"})
+}
+
+-- Home Tab
+Tabs.Home:AddButton({
+    Title = "Copiar invitación de Discord",
+    Description = "¡Únete a .gg/YqrejDbNWN para más filtraciones!",
+    Callback = function()
+        setclipboard("https://discord.gg/YqrejDbNWN")
+    end
+})
+
+Tabs.Home:AddParagraph({
+    Title = "¡Gracias por elegirnos! 💝",
+    Content = "Por @Zori"
+})
+
+local Section = Tabs.Home:AddSection("Información")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local LocalPlayer = Players.LocalPlayer
+local platform = UserInputService.TouchEnabled and "Mobile" or "PC"
+local executor = identifyexecutor and identifyexecutor() or "Unknown"
+local friendsInGame = 0
+local joinTime = os.date("%Y-%m-%d %H:%M:%S")
+
+-- Count friends in server
+pcall(function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and LocalPlayer:IsFriendsWith(plr.UserId) then
+            friendsInGame += 1
+        end
+    end
+end)
+
+Tabs.Home:AddParagraph({
+    Title = "👤 Información de la cuenta",
+    Content = table.concat({
+        "Nombre de usuario: **" .. LocalPlayer.Name .. "**",
+        "Nombre para mostrar: **" .. LocalPlayer.DisplayName .. "**",
+        "ID de usuario: **" .. LocalPlayer.UserId .. "**",
+        "Edad de la cuenta: **" .. LocalPlayer.AccountAge .. "** días",
+    }, "\n")
+})
+
+Tabs.Home:AddParagraph({
+    Title = "🕹️ Información del juego",
+    Content = table.concat({
+        "Topónimo: **" .. MarketplaceService:GetProductInfo(game.PlaceId).Name .. "**",
+        "ID del lugar: **" .. game.PlaceId .. "**",
+        "ID de trabajo: **" .. game.JobId .. "**",
+        "Ingresado: **" .. joinTime .. "**",
+    }, "\n")
+})
+
+Tabs.Home:AddParagraph({
+    Title = "💻 Dispositivo y ejecutor",
+    Content = table.concat({
+        "Plataforma: **" .. platform .. "**",
+        "Ejecutor: **" .. executor .. "**",
+        "Amigas en el servidor: **" .. friendsInGame .. "**",
+    }, "\n")
+})
+
+--// Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+--// Autofarm Vars
+local CHARACTER_ID = "001" -- Jet
+local TOOL_NAME = "BoStaff"
+
+local autofarmEnabled = false
+local currentMode = "Speed"
+local currentTarget = nil
+
+--// Helper: Select Jet
+local function selectJet()
+    local remote = ReplicatedStorage.Remotes.OnCharacterSelectTouchedRF
+    if remote then
+        pcall(function() remote:InvokeServer(CHARACTER_ID) end)
+    end
+end
+
+-- Equip tool
+local function equipTool()
+    if not LocalPlayer.Character then return nil end
+    local tool = LocalPlayer.Character:FindFirstChild(TOOL_NAME) or LocalPlayer.Backpack:FindFirstChild(TOOL_NAME)
+    if tool and tool.Parent ~= LocalPlayer.Character then
+        tool.Parent = LocalPlayer.Character
+    end
+    return LocalPlayer.Character:FindFirstChild(TOOL_NAME)
+end
+
+-- Get nearest player
+local function getNearest()
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local nearest, distNearest = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if not p.Character:FindFirstChildOfClass("ForceField") then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (hrp.Position - root.Position).Magnitude
+                    if dist < distNearest then
+                        nearest, distNearest = p, dist
+                    end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+-- Stick to target
+local function stickTarget(target)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local root = char.HumanoidRootPart
+
+    if not target.Character then return end
+
+    if currentMode == "Speed" then
+        local targetHRP = target.Character:FindFirstChild("HumanoidRootPart")
+        if targetHRP then
+            root.CFrame = targetHRP.CFrame * CFrame.new(0, -2, 0)
+        end
+    elseif currentMode == "Stable" then
+        -- Lay just under their legs
+        local leftLeg = target.Character:FindFirstChild("Left Leg") or target.Character:FindFirstChild("LeftLowerLeg") or target.Character:FindFirstChild("LeftFoot")
+        local rightLeg = target.Character:FindFirstChild("Right Leg") or target.Character:FindFirstChild("RightLowerLeg") or target.Character:FindFirstChild("RightFoot")
+        if leftLeg and rightLeg then
+            local legPos = (leftLeg.Position + rightLeg.Position) / 2
+            root.CFrame = CFrame.new(legPos.X, legPos.Y - 8, legPos.Z) * CFrame.Angles(math.rad(90), 0, 0)
+        end
+    end
+end
+
+-- Attack target
+local function attack(tool, target)
+    if not tool or not target or not target.Character then return end
+    if target.Character:FindFirstChildOfClass("ForceField") then return end
+    local hum = target.Character:FindFirstChild("Humanoid")
+    if not hum then return end
+    pcall(function() tool:Activate() end)
+    for _, v in ipairs(tool:GetDescendants()) do
+        if v:IsA("RemoteEvent") then
+            pcall(function() v:FireServer(hum) end)
+        elseif v:IsA("RemoteFunction") then
+            pcall(function() v:InvokeServer(hum) end)
+        end
+    end
+end
+
+-- Noclip
+local function noclip()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+end
+
+--// Autofarm Loop
+RunService.Heartbeat:Connect(function()
+    if not autofarmEnabled then return end
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
+        selectJet()
+        task.wait(1)
+        return
+    end
+
+    local tool = equipTool()
+    noclip()
+
+    if not currentTarget or not currentTarget.Character or not currentTarget.Character:FindFirstChild("Humanoid") or currentTarget.Character.Humanoid.Health <= 0 then
+        currentTarget = getNearest()
+    end
+
+    if currentTarget then
+        stickTarget(currentTarget)
+        attack(tool, currentTarget)
+        if currentMode == "Stable" then
+            task.wait(0.3) -- slower hits for stability
+        end
+    end
+end)
+
+-- Respawn support
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if autofarmEnabled then
+        selectJet()
+        task.wait(1)
+        equipTool()
+    end
+end)
+
+--// Fluent UI Controls
+Tabs.Autofarm:AddToggle("AutofarmToggle", {
+    Title = "Habilitar granja automática",
+    Default = false,
+    Callback = function(val)
+        autofarmEnabled = val
+        if val then
+            selectJet()
+            task.wait(1)
+            equipTool()
+        else
+            currentTarget = nil
+        end
+    end
+})
+
+Tabs.Autofarm:AddDropdown("ModeSelect", {
+    Title = "Modo de granja automática",
+    Values = {"Speed", "Stable"},
+    Default = "Speed",
+    Callback = function(val)
+        currentMode = val
+    end
+})
+
+-- Server Hopper function
+local function serverHop()
+    local success, response = pcall(function()
+        return game:HttpGet("https://games.roblox.com/v1/games/"..PLACE_ID.."/servers/Public?sortOrder=Desc&limit=100")
+    end)
+    
+    if not success then
+        warn("Failed to fetch server list")
+        return
+    end
+
+    local data = HttpService:JSONDecode(response)
+    if not data or not data.data then
+        warn("Invalid server list")
+        return
+    end
+
+    -- Sort by player count descending
+    table.sort(data.data, function(a,b)
+        return a.playing > b.playing
+    end)
+
+    for _, server in ipairs(data.data) do
+        local serverId = server.id
+        local maxPlayers = server.maxPlayers
+        local currentPlayers = server.playing
+
+        if not isServerVisited(serverId) and currentPlayers < maxPlayers then
+            print("Teleporting to server:", serverId, "Players:", currentPlayers.."/"..maxPlayers)
+            table.insert(visitedServers, serverId)
+            TeleportService:TeleportToPlaceInstance(PLACE_ID, serverId, Players.LocalPlayer)
+            return
+        end
+    end
+
+    warn("No suitable servers found. Retrying in 5 seconds...")
+    task.wait(5)
+    serverHop() -- retry
+end
+
+-- Severhop
+Tabs.Autofarm:AddButton({
+    Title = "Salto de servidor",
+    Description = "Ejecutor de Solora sin soporte.",
+    Callback = function()
+        serverHop()
+    end
+})
+
+-- 📊 Autofarm Stats
+local stats = {
+    kills = 0,
+    startTime = tick(),
+    lastKills = {}
+}
+
+-- Add Stats Section
+local Section = Tabs.Autofarm:AddSection("Estadísticas de Autofarm")
+
+local TargetLabel = Tabs.Autofarm:AddParagraph({
+    Title = "🎯 Objetivo",
+    Content = "None"
+})
+
+local KillsLabel = Tabs.Autofarm:AddParagraph({
+    Title = "⚔️ Muertes",
+    Content = "0"
+})
+
+local TimeLabel = Tabs.Autofarm:AddParagraph({
+    Title = "⏳ El tiempo corre",
+    Content = "0s"
+})
+
+local KillLogLabel = Tabs.Autofarm:AddParagraph({
+    Title = "💀 Registro de muertes",
+    Content = "No hay muertes todavía"
+})
+
+-- Update loop
+RunService.Heartbeat:Connect(function()
+    if autofarmEnabled then
+        -- Update target name
+        if currentTarget and currentTarget.Character and currentTarget.Character:FindFirstChild("Humanoid") and currentTarget.Character.Humanoid.Health > 0 then
+            TargetLabel:SetDesc("Ahora apuntando a: ".. currentTarget.DisplayName)
+        else
+            TargetLabel:SetDesc("Sin objetivo")
+        end
+
+        -- Update kills
+        KillsLabel:SetDesc("Muertes totales: " .. stats.kills)
+
+        -- Update time
+        local elapsed = tick() - stats.startTime
+        local mins = math.floor(elapsed/60)
+        local secs = math.floor(elapsed % 60)
+        TimeLabel:SetDesc(string.format("%02d:%02d", mins, secs))
+
+        -- Update last kill log
+        if #stats.lastKills > 0 then
+            KillLogLabel:SetDesc(table.concat(stats.lastKills, "\n"))
+        else
+            KillLogLabel:SetDesc("No hay muertes todavía")
+        end
+    end
+end)
+
+-- Track kills
+local function onTargetDied(target)
+    if not target or not target.Character then return end
+    stats.kills += 1
+    local killMsg = string.format("[%s] %s", os.date("%H:%M:%S"), target.DisplayName)
+    table.insert(stats.lastKills, 1, killMsg)
+    if #stats.lastKills > 5 then
+        table.remove(stats.lastKills) -- keep only last 5
+    end
+end
+
+-- Hook into target death
+local oldTarget = nil
+RunService.Heartbeat:Connect(function()
+    if autofarmEnabled and currentTarget and currentTarget ~= oldTarget then
+        oldTarget = currentTarget
+        local hum = currentTarget.Character and currentTarget.Character:FindFirstChild("Humanoid")
+        if hum then
+            hum.Died:Connect(function()
+                onTargetDied(currentTarget)
+            end)
+        end
+    end
+end)
+
+local Section = Tabs.Main:AddSection("Juego automático")
+-- 🔁 Autofarm Core Variables
+local players = game:GetService("Players")
+local localPlayer = players.LocalPlayer
+local runService = game:GetService("RunService")
+
+local autoEnabled = false
+local selectedTool = "BoStaff"
+local selectedCharacter = "Jet"
+local clickCooldown = 0.1
+local lastClickTime = 0
+local maxHeightDifference = 2
+
+-- 📍 Character Spawn Points
+local CharacterLocations = {
+    Jet = CFrame.new(7, 335.25, 23.5),
+    Shifter = CFrame.new(7, 335.25, 46.5, 0, 1, -0, -1, 0, 0, 0, 0, 1),
+    RedDeath = CFrame.new(31.0199738, 335.25, 14.4440651, 0, 0, -1, -1, 0, 0, 0, 1, 0),
+    Golem = CFrame.new(88.82, 335.26, 23.56)
+
+}
+local teleportCFrame = CharacterLocations[selectedCharacter]
+
+-- 🔄 Target Logic
+local function getValidTarget()
+    if not autoEnabled then return nil end
+
+    local closestPlayer, closestDistance = nil, math.huge
+    for _, player in pairs(players:GetPlayers()) do
+        if player ~= localPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            local forceField = player.Character:FindFirstChild("ForceField")
+
+            if humanoid and root and humanoid.Health > 0 and not forceField then
+                local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if myRoot then
+                    local distance = (myRoot.Position - root.Position).Magnitude
+                    if distance < closestDistance then
+                        closestDistance, closestPlayer = distance, player
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- 🧰 Equip Tool + Teleport
+local function teleportAndEquip()
+    if not autoEnabled then return end
+    teleportCFrame = CharacterLocations[selectedCharacter]
+
+    local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+    local root = char:WaitForChild("HumanoidRootPart")
+
+    root.CFrame = teleportCFrame
+
+    repeat
+        local tool = localPlayer.Backpack:FindFirstChild(selectedTool)
+        if tool then tool.Parent = char end
+        task.wait(0.1)
+    until not autoEnabled or char:FindFirstChild(selectedTool)
+end
+
+-- 🔁 Respawn Hook
+local function onCharacterAdded(character)
+    if not autoEnabled then return end
+
+    local humanoid = character:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        if not autoEnabled then return end
+        localPlayer.CharacterAdded:Wait()
+        task.wait(0.1)
+        teleportAndEquip()
+    end)
+
+    teleportAndEquip()
+end
+
+-- ➕ Connect Spawn
+localPlayer.CharacterAdded:Connect(onCharacterAdded)
+if localPlayer.Character then onCharacterAdded(localPlayer.Character) end
+
+-- 🧠 Main Loop
+runService.Heartbeat:Connect(function(delta)
+    if not autoEnabled then return end
+
+    local myChar = localPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
+
+    local target = getValidTarget()
+    if target and target.Character and myHumanoid and myRoot then
+        local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            myHumanoid:MoveTo(targetRoot.Position)
+
+            lastClickTime += delta
+            if lastClickTime >= clickCooldown then
+                lastClickTime = 0
+                local heightDiff = math.abs(myRoot.Position.Y - targetRoot.Position.Y)
+                if heightDiff <= maxHeightDifference then
+                    local tool = myChar:FindFirstChildOfClass("Tool")
+                    if tool then tool:Activate() end
+                end
+            end
+        end
+    end
+end)
+
+-- 🎛 Autofarm UI
+Tabs.Main:AddToggle("AutoPlayToggle", {
+    Title = "Habilitar reproducción automática",
+    Description = "Activar o desactivar la molienda automática (Alto unc)",
+    Default = false,
+    Callback = function(state)
+        autoEnabled = state
+        if state and localPlayer.Character then
+            teleportAndEquip()
+        end
+    end
+})
+
+Tabs.Main:AddDropdown("CharacterSelector", {
+    Title = "Seleccionar personaje",
+    Description = "Elige el punto de aparición para la autoagricultura",
+    Values = { "Jet", "Shifter", "RedDeath", "Golem" },
+    Default = 1,
+    Multi = false,
+    Callback = function(character)
+        selectedCharacter = character
+        teleportCFrame = CharacterLocations[character]
+    end
+})
+
+Tabs.Main:AddDropdown("ToolSelector", {
+    Title = "Seleccionar herramienta",
+    Description = "Elige la herramienta para la agricultura automática",
+    Values = { "BoStaff", "Tiger Form", "XSword", "Tank" },
+    Default = 1,
+    Multi = false,
+    Callback = function(option)
+        selectedTool = option
+    end
+})
+
+Tabs.Main:AddSlider("WalkSpeedSlider", {
+    Title = "WalkSpeed",
+    Description = "Ajuste WalkSpeed ​​para una agricultura más rápida",
+    Default = 16,
+    Min = 16,
+    Max = 250,
+    Rounding = 0,
+    Callback = function(value)
+        local human = localPlayer.Character and localPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if human then human.WalkSpeed = value end
+    end
+})
+
+-- Main Section
+local teleportPosition = nil
+local AutoTeleportEnabled = false
+local SpawnJet = false
+local player = game.Players.LocalPlayer
+
+--// Character Spawn Points
+local Characters = {
+    Jet = CFrame.new(7, 335.25, 23.5),
+    Shifter = CFrame.new(7, 335.25, 46.5, 0, 1, -0, -1, 0, 0, 0, 0, 1),
+    MsCrow = CFrame.new(7, 335.25, 35, 0, 1, -0, -1, 0, 0, 0, 0, 1),
+    Roborg = CFrame.new(7, 335.25, 12, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Starlight = CFrame.new(7, 335.25, 0.5, 0, 1, -0, -1, 0, 0, 0, 0, 1),
+    Goliath = CFrame.new(51, 335.25, 14.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Lynx = CFrame.new(51, 335.25, 23.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Gadget = CFrame.new(51, 335.25, 32.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    DukeSplitter = CFrame.new(51, 335.25, 41.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    WickedTempest = CFrame.new(51.5732231, 335.25, 68.7019043, -3.23057175e-05, -0.707060337, 0.707153201, -1, 3.23057175e-05, -1.33812428e-05, -1.33812428e-05, -0.707153201, -0.707060337),
+    Blacklight = CFrame.new(52, 335.25, -20.4999962, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Vision = CFrame.new(51, 335.25, 6),
+    ApprenticeJet = CFrame.new(31.0321045, 335.25, 32.4000015, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Slayer = CFrame.new(31.0321045, 335.25, 23.4019547, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    RedDeath = CFrame.new(31.0199738, 335.25, 14.4440651, 0, 0, -1, -1, 0, 0, 0, 1, 0),
+    Fury = CFrame.new(99, 335.25, -20.5),
+    Locust = CFrame.new(99, 335.25, 68.6999969, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    DocBright = CFrame.new(77, 335.25, 33, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Maya = CFrame.new(73, 335.25, 23.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    PowerFreak = CFrame.new(77, 335.25, 14.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Golem = CFrame.new(88.82, 335.26, 23.56),
+    Arrow = CFrame.new(146, 335.25, 14, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Honeybee = CFrame.new(146, 335.25, 23.5, 0, 1, -0, -1, 0, 0, 0, 0, 1),
+    DoubleTrouble = CFrame.new(146, 335.25, 34, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Sentinel = CFrame.new(128.5, 335.25, 23.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    LiquidMac = CFrame.new(146, 335.25, 4),
+    LightSpeed = CFrame.new(146, 335.25, 45),
+    EvilShifter = CFrame.new(168.5, 335.25, 33, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    EvilStarlight = CFrame.new(164.5, 335.25, 23.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    EvilRoborg = CFrame.new(168.5, 335.25, 14.5, 0, -1, -0, -1, 0, -0, 0, 0, -1),
+    Overlord = CFrame.new(182, 335.25, 23.5)
+}
+
+local Section = Tabs.Main:AddSection("Reaparición automática")
+
+Tabs.Main:AddDropdown("CharacterSelector", {
+    Title = "Seleccionar personaje para reaparecer como",
+    Values = {"Jet", "Shifter", "MsCrow", "Roborg", "Starlight", "Goliath", "Lynx", "Gadget", "Vision", "ApprenticeJet", "Slayer", "RedDeath", "DukeSplitter", "WickedTempest", "Blacklight", "Fury", "PowerFreak", "Maya", "DocBright", "Locust", "Golem", "Arrow", "Honeybee", "DoubleTrouble", "Sentinel", "LiquidMac", "LightSpeed", "EvilRoborg", "EvilStarlight", "EvilShifter", "Overlord"},
+    Multi = false,
+    Callback = function(Value)
+        teleportPosition = Characters[Value]
+    end
+})
+
+Tabs.Main:AddToggle("AutoRespawnToggle", {
+    Title = "Reaparición automática",
+    Description = "Reaparece instantáneamente y se teletransporta al personaje seleccionado.",
+    Default = false,
+    Callback = function(state)
+        AutoTeleportEnabled = state
+        if state then SpawnJet = true end
+    end
+})
+
+--// Auto Respawn Teleport Logic
+local function teleportIfNeeded()
+    if SpawnJet and AutoTeleportEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and teleportPosition then
+        player.Character.HumanoidRootPart.CFrame = teleportPosition
+        SpawnJet = false
+    end
+end
+
+local function onCharacterAdded(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        if AutoTeleportEnabled then
+            SpawnJet = true
+        end
+    end)
+    task.wait(0.5)
+    teleportIfNeeded()
+end
+
+if player.Character then onCharacterAdded(player.Character) end
+player.CharacterAdded:Connect(onCharacterAdded)
+
+local Section = Tabs.Main:AddSection("Autoseguro")
+local teleportEnabled = false
+local safePlace = nil
+local healthThreshold = 20  -- Default low health trigger
+
+--// FUNCTION TO CREATE SAFE PLATFORM
+local function createSafePlace(referencePosition)
+	if safePlace then
+		safePlace:Destroy()
+	end
+
+	safePlace = Instance.new("Part")
+	safePlace.Anchored = true
+	safePlace.Size = Vector3.new(6, 1, 6)
+	safePlace.Position = referencePosition + Vector3.new(0, 150, 0)
+	safePlace.Name = "SafePlace"
+	safePlace.CanCollide = true
+	safePlace.BrickColor = BrickColor.new("Medium stone grey")
+	safePlace.Material = Enum.Material.Plastic
+	safePlace.Parent = workspace
+end
+
+--// MONITOR HEALTH FUNCTION
+local function monitorHealth(humanoid, character)
+	humanoid.HealthChanged:Connect(function(health)
+		if teleportEnabled and health <= healthThreshold and safePlace then
+			local root = character:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.CFrame = CFrame.new(safePlace.Position + Vector3.new(0, 4, 0))
+			end
+		end
+	end)
+end
+
+--// CHARACTER LOADED HANDLER
+local function onCharacterLoaded(character)
+	local humanoid = character:WaitForChild("Humanoid")
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+
+	createSafePlace(rootPart.Position)
+	monitorHealth(humanoid, character)
+end
+
+--// BIND TO CHARACTER
+player.CharacterAppearanceLoaded:Connect(onCharacterLoaded)
+
+--// INITIALIZE IF ALREADY LOADED
+if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+	onCharacterLoaded(player.Character)
+end
+
+local Toggle = Tabs.Main:AddToggle("MyToggle", {
+    Title = "Modo Autoseguro",
+    Description = "Se teletransporta a SafePlace cuando la salud está baja.",
+    Default = false,
+    Callback = function(state)
+        teleportEnabled = state
+    end
+})
+
+local Dropdown = Tabs.Main:AddDropdown("Dropdown", {
+    Title = "Elija un umbral de salud bajo",
+    Description = "Selecciona cuándo teletransportarte",
+    Values = {"50", "40", "30", "20", "10"},
+    Multi = false,
+    Default = 4, -- Default to "20"
+    Callback = function(Value)
+        healthThreshold = tonumber(Value)
+    end
+})
+
+--// Teleport
+Tabs.Teleports:AddButton({
+    Title = "OnTopOfSpawn",
+    Description = "Te teletransporta OnTopOfSpawn",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(85, 355.999969, 23, 1, 4.24292388e-08, 2.86488498e-13, -4.24292388e-08, 1, 4.95687829e-08, -2.84385335e-13, -4.95687829e-08, 1)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "OnTopOf T-Titans HQ",
+    Description = "te teletransporta T-Titans HQ",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(-302.09137, 188.820236, -340.611267, -0.766062856, -3.67033053e-08, -0.642765641, -3.67207171e-08, 1, -1.33375604e-08, 0.642765641, 1.33854074e-08, -0.766062856)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "SafePlace",
+    Description = "te teletransporta SafePlace",
+    Callback = function()
+       game.Players.LocalPlayer.character.HumanoidRootPart.CFrame = CFrame.new(safePlace.Position)+Vector3.new(0,4,0)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "Battleground",
+    Description = "te teletransporta Battleground",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(48.9922905, 5.24159193, -4.00388193, 1, 1.50541499e-08, -0.000125665014, -1.50530077e-08, 1, 9.08762932e-09, 0.000125665014, -9.0857375e-09, 1)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "Spawn",
+    Description = "te teletransporta Spawn",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(3, 337.999939, 69, 1, -1.86387137e-08, -1.23241342e-13, 1.86387137e-08, 1, 1.60092881e-08, 1.22942956e-13, -1.60092881e-08, 1)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "Wave 1",
+    Description = "Te teletransporta a Wave uno",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(23, 337.999969, 71, 1, 6.52884466e-08, -4.3391421e-14, -6.52884466e-08, 1, -5.6086062e-08, 3.97296467e-14, 5.6086062e-08, 1)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "Wave 2",
+    Description = "Te teletransporta a Wave dos",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(64, 337.999969, 71, 1, 1.76899437e-08, -1.96580338e-14, -1.76899437e-08, 1, -1.52000812e-08, 1.93891466e-14, 1.52000812e-08, 1)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "Wave 3",
+    Description = "Te teletransporta a Wave tres",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(112, 337.999969, 70, 1, -2.87935453e-08, -4.61607613e-14, 2.87935453e-08, 1, 2.47468321e-08, 4.54482101e-14, -2.47468321e-08, 1)
+    end
+})
+
+Tabs.Teleports:AddButton({
+    Title = "Wave 4",
+    Description = "Te teletransporta a Wave cuatro",
+    Callback = function()
+       game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(162, 337.999969, 70, 1, -3.01668592e-08, -3.48318921e-14, 3.01668592e-08, 1, 2.59307491e-08, 3.40496403e-14, -2.59307491e-08, 1)
+    end
+})
+
+-- Advanced Hitbox Feature (simple & fully customizable)
+local hitboxEnabled = false
+local hitboxSize = Vector3.new(8,8,8)
+local hitboxTransparency = 0.5
+local hitboxColor = Color3.fromRGB(255,0,0)
+
+local hitboxes = {} -- optional for coloring
+
+-- Enable hitboxes
+local function enableHitbox()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = p.Character.HumanoidRootPart
+            hrp.Size = hitboxSize
+            hrp.Transparency = hitboxTransparency
+            -- Optional: apply color using SelectionBox or custom Part if you want visual cue
+        end
+    end
+end
+
+-- Reset hitboxes
+local function resetHitbox()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = p.Character.HumanoidRootPart
+            hrp.Size = Vector3.new(2,2,1)
+            hrp.Transparency = 0
+        end
+    end
+end
+
+-- Toggle in Misc tab
+local Section = Tabs.Misc:AddSection("Hitbox")
+Tabs.Misc:AddToggle("HitboxToggle", {
+    Title = "Hitbox",
+    Default = false
+}):OnChanged(function(state)
+    hitboxEnabled = state
+    if hitboxEnabled then
+        enableHitbox()
+    else
+        resetHitbox()
+    end
+end)
+
+-- Size slider
+Tabs.Misc:AddSlider("HitboxSizeSlider", {
+    Title = "Hitbox Tamaño",
+    Description = "Ajustar el tamaño de HRP hitboxes",
+    Default = 8,
+    Min = 2,
+    Max = 20,
+    Rounding = 1,
+    Callback = function(value)
+        hitboxSize = Vector3.new(value, value, value)
+    end
+})
+
+-- Transparency slider
+Tabs.Misc:AddSlider("HitboxTransparencySlider", {
+    Title = "Transparencia",
+    Description = "Ajustar HRP transparency",
+    Default = 0.5,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+    Callback = function(value)
+        hitboxTransparency = value
+    end
+})
+
+-- Keep updating hitboxes so new players are included
+RunService.Heartbeat:Connect(function()
+    if hitboxEnabled then
+        enableHitbox()
+    end
+end)
+
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+-- 🔄 Settings
+local ClickSpeed = 0.1
+local speedMap = {
+    ["Fast"] = 0.1,
+    ["Medium"] = 0.3,
+    ["Slow"] = 0.6
+}
+
+local clickerConnection = nil
+
+local Section = Tabs.Misc:AddSection("AutoAttack")
+-- ⬇️ Speed Dropdown
+Tabs.Misc:AddDropdown("ClickSpeedDropdown", {
+    Title = "Attack Speed",
+    Values = { "Fast", "Medium", "Slow" },
+    Multi = false,
+    Default = 1,
+    Callback = function(selected)
+        ClickSpeed = speedMap[selected]
+    end
+})
+
+-- ✅ AutoClick Toggle (with Tool Check)
+Tabs.Misc:AddToggle("AutoClickToggle", {
+    Title = "Permitir AutoAttack",
+    Description = "Hace clic solo cuando se mantiene presionada una herramienta",
+    Default = false,
+    Callback = function(state)
+        if state then
+            local lastClick = 0
+            clickerConnection = RunService.Heartbeat:Connect(function(dt)
+                local toolEquipped = player.Character and player.Character:FindFirstChildOfClass("Tool")
+                lastClick += dt
+
+                if toolEquipped and lastClick >= ClickSpeed then
+                    lastClick = 0
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                end
+            end)
+        else
+            if clickerConnection then
+                clickerConnection:Disconnect()
+                clickerConnection = nil
+            end
+        end
+    end
+})
+
+-- Player
+local Section = Tabs.Player:AddSection("Movement")
+local Slider = Tabs.Player:AddSlider("Slider", 
+{
+    Title = "Walkspeed",
+    Description = "¡Ve rápido!",
+    Default = 16,
+    Min = 0,
+    Max = 1000,
+    Rounding = 1,
+    Callback = function(Value)
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = Value
+    end
+})
+
+local Slider = Tabs.Player:AddSlider("Slider", 
+{
+    Title = "JumpPower",
+    Description = "¡Sube alto!",
+    Default = 50,
+    Min = 0,
+    Max = 1500,
+    Rounding = 1,
+    Callback = function(Value)
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = Value
+    end
+})
+
+Tabs.Player:AddButton({
+    Title = "Recuperar velocidad y saltar",
+    Description = "Cambie el valor nuevamente.",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 16
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = 50
+    end
+})
+
+local Section = Tabs.Player:AddSection("Anti & More")
+Tabs.Player:AddButton({
+    Title = "Anti AFK",
+    Description = "Previene Roblox AFK patada.",
+    Callback = function()
+        local vu = game:GetService("VirtualUser")
+        game:GetService("Players").LocalPlayer.Idled:Connect(function()
+            vu:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+            task.wait(1)
+            vu:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)
+        end)
+    end
+})
+
+
+-- Low Graphics / Performance Mode
+Tabs.Player:AddButton({
+    Title = "Gráficos bajos",
+    Description = "Reduce el retraso al simplificar el mapa y los efectos.",
+    Callback = function()
+        -- Disable shadows and high-quality lighting
+        if game:GetService("Lighting") then
+            local Lighting = game:GetService("Lighting")
+            Lighting.GlobalShadows = false
+            Lighting.FogEnd = 100000
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.fromRGB(200,200,200)
+        end
+
+        -- Destroy/disable unnecessary map decorations
+        local Workspace = game:GetService("Workspace")
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                v.Enabled = false
+            elseif v:IsA("BasePart") and v.Name:match("Tree") or v.Name:match("Grass") or v.Name:match("Prop") then
+                v:Destroy()
+            elseif v:IsA("Decal") then
+                v.Transparency = 1
+            end
+        end
+
+        -- Disable textures on all parts
+        for _, part in ipairs(Workspace:GetDescendants()) do
+            if part:IsA("BasePart") and part.TextureID ~= "" then
+                part.TextureID = ""
+            end
+        end
+
+        -- Optional: reduce particles in players' accessories
+        for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+            if player.Character then
+                for _, desc in ipairs(player.Character:GetDescendants()) do
+                    if desc:IsA("ParticleEmitter") or desc:IsA("Trail") then
+                        desc.Enabled = false
+                    end
+                end
+            end
+        end
+
+    end
+})
+
+--// Config
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetFolder("TitansHub")
+InterfaceManager:SetFolder("TitansHub")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+Window:SelectTab(1)
